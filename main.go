@@ -2,10 +2,10 @@ package main
 
 import (
 	"crypto/rand"
-	"fmt"
 	"io"
 	"log"
 	"math/big"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,12 +18,16 @@ const (
 	idAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 )
 
-var (
-	urlStorage = map[string]string{}
+type URLShortener struct {
+	urlStorage map[string]string
 	storeMu    sync.RWMutex
-)
+}
 
-func isValidUrl(s string) bool {
+func NewURLShortener() *URLShortener {
+	return &URLShortener{urlStorage: make(map[string]string)}
+}
+
+func isValidURL(s string) bool {
 	u, err := url.ParseRequestURI(s)
 	if err != nil {
 		return false
@@ -42,20 +46,21 @@ func generateID() (string, error) {
 	for i := range b {
 		idx, err := rand.Int(rand.Reader, n)
 		if err != nil {
-			return "", fmt.Errorf("failed to generate random data")
+			return "", err
 		}
 		b[i] = idAlphabet[idx.Int64()]
 	}
 	return string(b), nil
 }
 
-func shortenHandler(w http.ResponseWriter, r *http.Request) {
+func (s *URLShortener) ShortenHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "bad request", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if r.Header.Get("Content-Type") != "text/plain" {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "text/plain" {
 		http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
 		return
 	}
@@ -67,9 +72,9 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	rawUrl := strings.TrimSpace(string(body))
+	rawURL := strings.TrimSpace(string(body))
 
-	if rawUrl == "" || !isValidUrl(rawUrl) {
+	if rawURL == "" || !isValidURL(rawURL) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -82,19 +87,15 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		storeMu.RLock()
-		_, exist := urlStorage[candidate]
-		storeMu.RUnlock()
-
-		if !exist {
+		s.storeMu.Lock()
+		if _, exists := s.urlStorage[candidate]; !exists {
 			id = candidate
+			s.urlStorage[id] = rawURL
+			s.storeMu.Unlock()
 			break
 		}
+		s.storeMu.Unlock()
 	}
-
-	storeMu.Lock()
-	urlStorage[id] = rawUrl
-	storeMu.Unlock()
 
 	shortURL := "http://" + serverHost + "/" + id
 	w.Header().Set("Content-Type", "text/plain")
@@ -102,7 +103,7 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(shortURL))
 }
 
-func redirectHandler(w http.ResponseWriter, r *http.Request) {
+func (s *URLShortener) RedirectHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "bad request", http.StatusMethodNotAllowed)
 		return
@@ -114,9 +115,9 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storeMu.RLock()
-	original, exist := urlStorage[id]
-	storeMu.RUnlock()
+	s.storeMu.RLock()
+	original, exist := s.urlStorage[id]
+	s.storeMu.RUnlock()
 
 	if !exist {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -127,17 +128,15 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
-func mainHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/" {
-		shortenHandler(w, r)
-		return
-	}
-	redirectHandler(w, r)
-}
-
 func main() {
+	shortener := NewURLShortener()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /", shortener.ShortenHandler)
+	mux.HandleFunc("GET /{id}", shortener.RedirectHandler)
+
 	log.Printf("URL shortener is running on http://%s", serverHost)
-	if err := http.ListenAndServe(serverHost, http.HandlerFunc(mainHandler)); err != nil {
+	if err := http.ListenAndServe(serverHost, mux); err != nil {
 		log.Fatal(err)
 	}
 }
