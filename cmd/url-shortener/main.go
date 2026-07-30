@@ -2,15 +2,18 @@ package main
 
 import (
 	"URLShortener/internal/config"
+	"URLShortener/internal/http-server/handlers/url/save"
 	"URLShortener/internal/http-server/middleware/mwLogger"
 	"URLShortener/internal/lib/logger/sl"
 	"URLShortener/internal/storage/sqlite"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/lmittmann/tint"
 )
 
 const (
@@ -41,7 +44,22 @@ func main() {
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.URLFormat)
 
-	// TODO init server:
+	router.Post("/url", save.New(log, storage))
+
+	log.Info("starting server", slog.String("address", cfg.Address))
+
+	srv := &http.Server{
+		Addr:         cfg.Address,
+		Handler:      router,
+		ReadTimeout:  cfg.Timeout,
+		WriteTimeout: cfg.Timeout,
+		IdleTimeout:  cfg.IdleTimeout,
+	}
+
+	if err = srv.ListenAndServe(); err != nil {
+		log.Error("failed to start server")
+	}
+
 }
 
 func setupLogger(env string) *slog.Logger {
@@ -49,9 +67,7 @@ func setupLogger(env string) *slog.Logger {
 
 	switch env {
 	case envLocal:
-		logger = slog.New(
-			slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}),
-		)
+		logger = setupPrettySlog()
 	case envDev:
 		logger = slog.New(
 			slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}),
@@ -62,6 +78,14 @@ func setupLogger(env string) *slog.Logger {
 		)
 	}
 	return logger
+}
+
+func setupPrettySlog() *slog.Logger {
+	handler := tint.NewTextHandler(os.Stdout, &tint.Options{
+		Level:      slog.LevelDebug,
+		TimeFormat: "15:05:05:000",
+	})
+	return slog.New(handler)
 }
 
 /*
