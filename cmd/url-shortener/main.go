@@ -2,7 +2,9 @@ package main
 
 import (
 	"URLShortener/internal/config"
-	"URLShortener/internal/http-server/handlers/url/save"
+	"URLShortener/internal/http-server/handlers/redirect"
+	"URLShortener/internal/http-server/handlers/remove"
+	"URLShortener/internal/http-server/handlers/save"
 	"URLShortener/internal/http-server/middleware/mwLogger"
 	"URLShortener/internal/lib/logger/sl"
 	"URLShortener/internal/storage/sqlite"
@@ -28,7 +30,7 @@ func main() {
 
 	log := setupLogger(cfg.Env)
 
-	log.Info("starting url-shortener", slog.String("environment", cfg.Env))
+	log.Info("starting url-shortener", slog.String("envi ronment", cfg.Env))
 	log.Debug("debug logging enabled")
 
 	storage, err := sqlite.New(cfg.StoragePath)
@@ -45,6 +47,8 @@ func main() {
 	router.Use(middleware.URLFormat)
 
 	router.Post("/url", save.New(log, storage))
+	router.Get("/{alias}", redirect.New(log, storage))
+	router.Delete("/url/{alias}", remove.New(log, storage))
 
 	log.Info("starting server", slog.String("address", cfg.Address))
 

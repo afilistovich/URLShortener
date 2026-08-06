@@ -1,6 +1,8 @@
 package save_test
 
 import (
+	"URLShortener/internal/http-server/handlers/save"
+	"URLShortener/internal/http-server/handlers/save/mocks"
 	"URLShortener/internal/storage"
 	"bytes"
 	"encoding/json"
@@ -13,8 +15,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"URLShortener/internal/http-server/handlers/url/save"
-	"URLShortener/internal/http-server/handlers/url/save/mocks"
 	"URLShortener/internal/lib/logger/handlers/slogdiscard"
 )
 
