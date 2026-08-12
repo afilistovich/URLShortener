@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -131,4 +134,41 @@ func TestSaveHandler_Enhanced(t *testing.T) {
 			urlSaverMock.AssertExpectations(t)
 		})
 	}
+}
+
+func TestSaveHandler_RequiresAuth(t *testing.T) {
+	urlSaverMock := mocks.NewURLSaver(t)
+	urlSaverMock.On("SaveURL", mock.Anything, mock.Anything).
+		Return(int64(1), nil).
+		Maybe() // не должен вызваться при 401
+
+	r := chi.NewRouter()
+	r.Route("/url", func(r chi.Router) {
+		r.Use(middleware.BasicAuth("url-shortener", map[string]string{
+			"admin": "secret",
+		}))
+		r.Post("/", save.New(slogdiscard.NewDiscardLogger(), urlSaverMock))
+	})
+
+	ts := httptest.NewServer(r)
+	defer ts.Close()
+
+	body := `{"url": "https://google.com"}`
+
+	t.Run("без креденшлов -> 401", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/url", strings.NewReader(body))
+		res, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+		require.Equal(t, http.StatusUnauthorized, res.StatusCode)
+	})
+
+	t.Run("с верными креденшлами -> 200", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/url", strings.NewReader(body))
+		req.SetBasicAuth("admin", "secret")
+		res, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+		require.Equal(t, http.StatusOK, res.StatusCode)
+	})
 }
