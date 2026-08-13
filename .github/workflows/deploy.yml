@@ -68,6 +68,11 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key ${{ env.HOST }} \
             "mkdir -p ${{ env.REMOTE_CONFIG_DIR }} ${{ env.REMOTE_DATA_DIR }}"
+          
+      - name: Copy config to server
+        run: |
+          scp -i ~/.ssh/deploy_key config/prod.yaml \
+            ${{ env.HOST }}:${{ env.REMOTE_CONFIG_DIR }}/prod.yaml    
 
       - name: Pull and run new image
         env:
