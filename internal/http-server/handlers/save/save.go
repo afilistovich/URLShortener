@@ -65,6 +65,7 @@ func New(log *slog.Logger, urlSaver URLSaver) http.HandlerFunc {
 			if err != nil {
 				log.Error("failed to generate alias", sl.Err(err))
 				render.JSON(w, r, resp.Error("internal server error"))
+				return
 			}
 		}
 
@@ -79,6 +80,7 @@ func New(log *slog.Logger, urlSaver URLSaver) http.HandlerFunc {
 		if err != nil {
 			log.Error("failed to add url", sl.Err(err))
 			render.JSON(w, r, resp.Error("failed to add url"))
+			return
 
 		}
 

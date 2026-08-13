@@ -13,7 +13,7 @@ import (
 	"github.com/go-chi/render"
 )
 
-//URLGetter is an interface for getting url by alias
+// URLGetter is an interface for getting url by alias
 //
 //go:generate go run github.com/vektra/mockery/v2@latest --name=URLGetter
 type URLGetter interface {
