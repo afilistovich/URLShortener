@@ -1,0 +1,93 @@
+name: Deploy App
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to deploy'
+        required: true
+
+env:
+  HOST: root@139.100.238.51
+  SERVER_IP: 139.100.238.51
+  IMAGE: ghcr.io/${{ github.repository_owner }}/url-shortener
+  REMOTE_CONFIG_DIR: /root/apps/url-shortener/config
+  REMOTE_DATA_DIR: /root/apps/url-shortener/data
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag }}
+          fetch-depth: 0
+
+      - name: Check if tag exists
+        run: |
+          if ! git tag | grep -q "^${{ github.event.inputs.tag }}$"; then
+            echo "error: Tag '${{ github.event.inputs.tag }}' not found"
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.event.inputs.tag }}
+            ${{ env.IMAGE }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add SSH key and known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ env.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Ensure remote directories exist
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ env.HOST }} \
+            "mkdir -p ${{ env.REMOTE_CONFIG_DIR }} ${{ env.REMOTE_DATA_DIR }}"
+
+      - name: Pull and run new image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          TAG: ${{ github.event.inputs.tag }}
+          HTTP_SERVER_PASSWORD: ${{ secrets.AUTH_PASS }}
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ env.HOST }} bash -s <<EOF
+            echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+            docker pull ${{ env.IMAGE }}:$TAG
+            docker stop url-shortener 2>/dev/null || true
+            docker rm url-shortener 2>/dev/null || true
+            docker run -d \
+              --name url-shortener \
+              --restart unless-stopped \
+              -p 8082:8082 \
+              -v ${{ env.REMOTE_CONFIG_DIR }}:/app/config:ro \
+              -v ${{ env.REMOTE_DATA_DIR }}:/app/data \
+              -e CONFIG_PATH=/app/config/prod.yaml \
+              -e HTTP_SERVER_PASSWORD="$HTTP_SERVER_PASSWORD" \
+              ${{ env.IMAGE }}:$TAG
+          EOF
