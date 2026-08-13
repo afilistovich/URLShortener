@@ -57,6 +57,11 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag }}
+
       - name: Add SSH key and known_hosts
         run: |
           mkdir -p ~/.ssh
@@ -68,7 +73,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key ${{ env.HOST }} \
             "mkdir -p ${{ env.REMOTE_CONFIG_DIR }} ${{ env.REMOTE_DATA_DIR }}"
-          
+
       - name: Copy config to server
         run: |
           scp -i ~/.ssh/deploy_key config/prod.yaml \
