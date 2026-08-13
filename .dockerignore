@@ -1,0 +1,6 @@
+.git
+.idea
+.github
+storage
+*.md
+identifier.sqlite
