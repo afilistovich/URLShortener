@@ -72,7 +72,8 @@ jobs:
       - name: Ensure remote directories exist
         run: |
           ssh -i ~/.ssh/deploy_key ${{ env.HOST }} \
-            "mkdir -p ${{ env.REMOTE_CONFIG_DIR }} ${{ env.REMOTE_DATA_DIR }}"
+            "mkdir -p ${{ env.REMOTE_CONFIG_DIR }} ${{ env.REMOTE_DATA_DIR }} && \
+             chown -R 10001:10001 ${{ env.REMOTE_DATA_DIR }}"
 
       - name: Copy config to server
         run: |

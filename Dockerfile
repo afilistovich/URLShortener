@@ -13,7 +13,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o url-shortener ./cmd/url-shortener
 FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates && \
-    addgroup -S app && adduser -S app -G app && \
+    addgroup -g 10001 -S app && \
+    adduser -u 10001 -S app -G app && \
     mkdir -p /app/data /app/config
 
 WORKDIR /app
@@ -23,5 +24,4 @@ RUN chown -R app:app /app
 USER app
 EXPOSE 8082
 
-# Абсолютный путь - не зависит от того, что смонтировано в /app
 ENTRYPOINT ["/app/url-shortener"]
